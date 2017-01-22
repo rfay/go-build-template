@@ -17,11 +17,10 @@ limitations under the License.
 package main
 
 import (
-	"log"
+	"fmt"
+	"github.com/rfay/go-build-template/pkg/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/hugo/utils"
-	"github.com/rfay/go-build-template/pkg/version"
-	"fmt"
 )
 
 var versionCommand = &cobra.Command{
@@ -33,19 +32,20 @@ var versionCommand = &cobra.Command{
 	},
 }
 
-
 var myapp = &cobra.Command{
 	Use:   "myapp",
 	Short: "myapp",
-	Long: `Simple test command`,
+	Long:  `Simple test command`,
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Printf("hello, world!")
+		fmt.Println(HelloWorldOutput())
 	},
 }
-
 
 func main() {
 	myapp.AddCommand(versionCommand)
 	utils.StopOnErr(myapp.Execute())
 }
 
+func HelloWorldOutput() string {
+	return "hello, world!"
+}
