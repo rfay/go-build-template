@@ -16,8 +16,36 @@ limitations under the License.
 
 package main
 
-import "log"
+import (
+	"log"
+	"github.com/spf13/cobra"
+	"github.com/spf13/hugo/utils"
+	"github.com/rfay/go-build-template/pkg/version"
+	"fmt"
+)
+
+var versionCommand = &cobra.Command{
+	Use:   "version",
+	Short: "Print the version number",
+	Long:  `Print the version number.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(version.VERSION)
+	},
+}
+
+
+var myapp = &cobra.Command{
+	Use:   "myapp",
+	Short: "myapp",
+	Long: `Simple test command`,
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Printf("hello, world!")
+	},
+}
+
 
 func main() {
-	log.Printf("hello, world!")
+	myapp.AddCommand(versionCommand)
+	utils.StopOnErr(myapp.Execute())
 }
+
