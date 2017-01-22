@@ -12,17 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+.PHONY: all build test push clean version
+
 # The binary to build (just the basename).
 BIN := myapp
 
 # This repo's root import path (under GOPATH).
-PKG := github.com/thockin/go-build-template
+PKG := github.com/rfay/go-build-template
 
 # Where to push the docker image.
-REGISTRY ?= thockin
+REGISTRY ?= randyfay
 
-# Which architecture to build - see $(ALL_ARCH) for options.
+# Which architecture to build
 ARCH ?= amd64
+
+# OS is darwin unless set on command line
+OS ?= darwin
 
 # This version-strategy uses git tags to set the version string
 VERSION := $(shell git describe --tags --always --dirty)
@@ -36,23 +41,12 @@ VERSION := $(shell git describe --tags --always --dirty)
 
 SRC_DIRS := cmd pkg # directories which hold app source (not vendored)
 
-ALL_ARCH := amd64 arm arm64 ppc64le
-
 # Set default base image dynamically for each arch
 ifeq ($(ARCH),amd64)
     BASEIMAGE?=alpine
 endif
-ifeq ($(ARCH),arm)
-    BASEIMAGE?=armel/busybox
-endif
-ifeq ($(ARCH),arm64)
-    BASEIMAGE?=aarch64/busybox
-endif
-ifeq ($(ARCH),ppc64le)
-    BASEIMAGE?=ppc64le/busybox
-endif
 
-IMAGE := $(REGISTRY)/$(BIN)-$(ARCH)
+IMAGE := $(REGISTRY)/$(BIN)
 
 BUILD_IMAGE ?= golang:1.7-alpine
 
@@ -62,36 +56,25 @@ BUILD_IMAGE ?= golang:1.7-alpine
 all: build
 
 build-%:
-	@$(MAKE) --no-print-directory ARCH=$* build
+	$(MAKE) --no-print-directory OS=$* build
 
-container-%:
-	@$(MAKE) --no-print-directory ARCH=$* container
+build: bin/$(OS)/$(BIN)
 
-push-%:
-	@$(MAKE) --no-print-directory ARCH=$* push
-
-all-build: $(addprefix build-, $(ALL_ARCH))
-
-all-container: $(addprefix container-, $(ALL_ARCH))
-
-all-push: $(addprefix push-, $(ALL_ARCH))
-
-build: bin/$(ARCH)/$(BIN)
-
-bin/$(ARCH)/$(BIN): build-dirs
+bin/$(OS)/$(BIN): build-dirs
 	@echo "building: $@"
 	@docker run                                                            \
-	    -ti                                                                \
+	    -t                                                                \
 	    -u $$(id -u):$$(id -g)                                             \
 	    -v $$(pwd)/.go:/go                                                 \
 	    -v $$(pwd):/go/src/$(PKG)                                          \
-	    -v $$(pwd)/bin/$(ARCH):/go/bin                                     \
-	    -v $$(pwd)/bin/$(ARCH):/go/bin/linux_$(ARCH)                       \
-	    -v $$(pwd)/.go/std/$(ARCH):/usr/local/go/pkg/linux_$(ARCH)_static  \
+	    -v $$(pwd)/bin/$(OS):/go/bin                                     \
+	    -v $$(pwd)/bin/$(OS):/go/bin/$(OS)                       \
+	    -v $$(pwd)/.go/std/$(OS):/usr/local/go/pkg/$(OS)_$(ARCH)_static  \
+	    -e GOOS=linux	\
 	    -w /go/src/$(PKG)                                                  \
 	    $(BUILD_IMAGE)                                                     \
 	    /bin/sh -c "                                                       \
-	        ARCH=$(ARCH)                                                   \
+	        OS=$(OS)                                                   \
 	        VERSION=$(VERSION)                                             \
 	        PKG=$(PKG)                                                     \
 	        ./build/build.sh                                               \
@@ -99,14 +82,15 @@ bin/$(ARCH)/$(BIN): build-dirs
 
 DOTFILE_IMAGE = $(subst /,_,$(IMAGE))-$(VERSION)
 
-container: .container-$(DOTFILE_IMAGE) container-name
-.container-$(DOTFILE_IMAGE): bin/$(ARCH)/$(BIN) Dockerfile.in
+container: build-linux .container-$(DOTFILE_IMAGE) container-name
+
+.container-$(DOTFILE_IMAGE): build-linux Dockerfile.in
 	@sed \
 	    -e 's|ARG_BIN|$(BIN)|g' \
-	    -e 's|ARG_ARCH|$(ARCH)|g' \
+	    -e 's|ARG_OS|linux|g' \
 	    -e 's|ARG_FROM|$(BASEIMAGE)|g' \
-	    Dockerfile.in > .dockerfile-$(ARCH)
-	@docker build -t $(IMAGE):$(VERSION) -f .dockerfile-$(ARCH) .
+	    Dockerfile.in > .dockerfile
+	@docker build -t $(IMAGE):$(VERSION) -f .dockerfile .
 	@docker images -q $(IMAGE):$(VERSION) > $@
 
 container-name:
@@ -114,7 +98,7 @@ container-name:
 
 push: .push-$(DOTFILE_IMAGE) push-name
 .push-$(DOTFILE_IMAGE): .container-$(DOTFILE_IMAGE)
-	@gcloud docker push $(IMAGE):$(VERSION)
+	@gcloud docker push -- $(IMAGE):$(VERSION)
 	@docker images -q $(IMAGE):$(VERSION) > $@
 
 push-name:
@@ -123,28 +107,30 @@ push-name:
 version:
 	@echo $(VERSION)
 
-test: build-dirs
+test: build-dirs build-linux
 	@docker run                                                            \
-	    -ti                                                                \
+	    -t                                                                \
 	    -u $$(id -u):$$(id -g)                                             \
 	    -v $$(pwd)/.go:/go                                                 \
 	    -v $$(pwd):/go/src/$(PKG)                                          \
-	    -v $$(pwd)/bin/$(ARCH):/go/bin                                     \
-	    -v $$(pwd)/.go/std/$(ARCH):/usr/local/go/pkg/linux_$(ARCH)_static  \
+	    -v $$(pwd)/bin/linux:/go/bin                                     \
+	    -v $$(pwd)/.go/std/linux:/usr/local/go/pkg/linux_$(ARCH)_static  \
 	    -w /go/src/$(PKG)                                                  \
+	    -e GOOS=linux	\
 	    $(BUILD_IMAGE)                                                     \
 	    /bin/sh -c "                                                       \
+	        OS=linux                                                   \
 	        ./build/test.sh $(SRC_DIRS)                                    \
 	    "
 
 build-dirs:
-	@mkdir -p bin/$(ARCH)
-	@mkdir -p .go/src/$(PKG) .go/pkg .go/bin .go/std/$(ARCH)
+	@mkdir -p bin/$(OS)
+	@mkdir -p .go/src/$(PKG) .go/pkg .go/bin .go/std/$(OS)
 
 clean: container-clean bin-clean
 
 container-clean:
-	rm -rf .container-* .dockerfile-* .push-*
+	rm -rf .container-* .dockerfile* .push-*
 
 bin-clean:
 	rm -rf .go bin

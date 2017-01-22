@@ -17,8 +17,15 @@
 set -o errexit
 set -o nounset
 set -o pipefail
+set -x
+
+if [ -z "${OS}" ]; then
+    echo "OS must be set"
+    exit 1
+fi
 
 export CGO_ENABLED=0
+export GOOS="${OS}"
 
 TARGETS=$(for d in "$@"; do echo ./$d/...; done)
 
@@ -40,7 +47,7 @@ fi
 echo "PASS"
 echo
 
-echo -n "Checking go vet: "
+echo -n "Checking go vet ${TARGETS}: "
 ERRS=$(go vet ${TARGETS} 2>&1 || true)
 if [ -n "${ERRS}" ]; then
     echo "FAIL"
